@@ -15,7 +15,7 @@ const v3 = require('node-hue-api').v3
 const model = require('node-hue-api').v3.model;
 
 const LightState = v3.lightStates.LightState;
-const USERNAME = '-kMVkteI-VJ2C8zI3fRzoqB4guO7KHBfFnc-n8Lf'
+const USERNAME = '-kMVkteI-VJ2C8zI3fRzoqB4guO7KHBfFnc-n8Lf' //need to put in env
   // The name of the light we wish to retrieve by name
   , COLOR_GLOBE = 3
   , SENSOR = 10
@@ -35,12 +35,10 @@ io.on("connection", (socket) => {
   }
 
   interval = setInterval(() => getApiAndEmit(socket), 1000);
-  socket.on("batCall", data => {
+
+  socket.on("batCall", () => {
     console.log("someone pressed the bat signal button");
-    getBatStatus();
-    socket.emit("batStatus", batstatus);
-    // globeON(socket);
-  })
+    });
   socket.on("disconnect", () => {
     console.log("Client disconnected");
     clearInterval(interval);
@@ -48,6 +46,22 @@ io.on("connection", (socket) => {
 });
 
 const getApiAndEmit = socket => {
+  console.log("getting light status");
+  v3.discovery.nupnpSearch()
+    .then(searchResults => {
+      const host = searchResults[0].ipaddress;
+      return v3.api.createLocal(host).connect(USERNAME);
+    })
+    .then(api => {
+      // Get the daylight sensor for the bridge, at id 1
+          console.log(api.lights.getLight(COLOR_GLOBE));
+          return api.lights.getLight(COLOR_GLOBE);
+          })
+    .then(result => {
+      const resultstring = (`${result.toStringDetailed()}`);
+      const resultjson = (`${JSON.stringify(result, null, 2)}`);
+      socket.emit("batStatus", `${resultjson}`);    // globeON(socket);
+})
   const response = new Date();
   const responseTemp = 8765;
   // Emitting a new message. Will be consumed by the client
@@ -68,8 +82,8 @@ const getBatStatus = socket => {
           return api.lights.getLight(COLOR_GLOBE);
           })
     .then(result => {
-      let batstatus;
       console.log(`${result.toStringDetailed()}`);
+      socket.emit("batStatus", `${result}`);
     })
 };
 
@@ -93,7 +107,6 @@ const getBatStatus = socket => {
         })
         .then(result => {
           console.log(`Light state change was successful? ${result}`);
-          socket.emit("Globe ON", `Light state change was successful: ${result}`);
         })};
 
 
