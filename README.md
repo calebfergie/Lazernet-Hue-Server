@@ -1,10 +1,11 @@
-#Lazernet Hue Server
+# Lazernet Hue Server
 
-## The LOCAL machine required to pull data from the Hue network hub
-by calebfergie
+## The 🖥 LOCAL machine 🖥 required to pull data from the private 🏠 Hue network hub 🏠
+<i>by calebfergie</i>
 
 ### "Architecture"
-Hue Bridge < (local) > <s>THIS CODE</s> < (web) > MongoDB <> Lazernet Hue Frontend
+
+🏠 Hue Bridge 🏠  <`local`> 🖥 <b>THIS APP</b> 🖥 <`web`> 🍃 MongoDB 🍃  <> 🌎 Lazernet Hue Frontend 🌎
 
 ## What does it do?
 This express app polls the Hue Bridge on the local network to get information about the lights and sensors in the house.
