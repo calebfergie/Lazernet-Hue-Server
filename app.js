@@ -1,114 +1,106 @@
 const express = require("express");
-const http = require("http");
-const socketIo = require("socket.io");
+const bodyParser = require('body-parser');
+const cron = require("node-cron");
+const MongoClient = require('mongodb').MongoClient;
 
-const port = process.env.PORT || 4001;
-const index = require("./routes/index");
+// dotenv baby
+const dotenv = require("dotenv");
+dotenv.config();
 
-const app = express();
-app.use(index);
-
+//HUE STUFF
 const v3 = require('node-hue-api').v3
   , discovery = v3.discovery
-  , hueApi = v3.api
-;
-const model = require('node-hue-api').v3.model;
+  , hueApi = v3.api;
 
+const model = require('node-hue-api').v3.model;
 const LightState = v3.lightStates.LightState;
-const USERNAME = '-kMVkteI-VJ2C8zI3fRzoqB4guO7KHBfFnc-n8Lf' //need to put in env
+const USERNAME = process.env.HUEID //env baby
   // The name of the light we wish to retrieve by name
   , COLOR_GLOBE = 3
-  , SENSOR = 10
-;
+  , SENSOR = 10;
 
-const server = http.createServer(app);
+// future steps
+// const http = require("http");
+// const socketIo = require("socket.io");
 
-const io = socketIo(server);
+const port = process.env.PORT || 4001;
 
-let interval;
-let batstatus;
+const app = express();
 
-io.on("connection", (socket) => {
-  console.log("New client connected");
-  if (interval) {
-    clearInterval(interval);
-  }
+app.use(bodyParser.urlencoded({
+  extended: true
+}));
 
-  interval = setInterval(() => getApiAndEmit(socket), 1000);
+//FIRE IT UP
+updateDB();
 
-  socket.on("batCall", () => {
-    console.log("someone pressed the bat signal button");
-    });
-  socket.on("disconnect", () => {
-    console.log("Client disconnected");
-    clearInterval(interval);
-  });
+// Creating a cron job which runs on every minute
+cron.schedule("*/1 * * * *", function() {
+    console.log("running a task every 1 minutes");
+    updateDB();
 });
 
-const getApiAndEmit = socket => {
-  console.log("getting light status");
-  v3.discovery.nupnpSearch()
-    .then(searchResults => {
-      const host = searchResults[0].ipaddress;
-      return v3.api.createLocal(host).connect(USERNAME);
-    })
-    .then(api => {
-      // Get the daylight sensor for the bridge, at id 1
-          console.log(api.lights.getLight(COLOR_GLOBE));
-          return api.lights.getLight(COLOR_GLOBE);
-          })
-    .then(result => {
-      const resultstring = (`${result.toStringDetailed()}`);
-      const resultjson = (`${JSON.stringify(result, null, 2)}`);
-      socket.emit("batStatus", `${resultjson}`);    // globeON(socket);
+//not really used rn
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/index.html')
 })
-  const response = new Date();
-  const responseTemp = 8765;
-  // Emitting a new message. Will be consumed by the client
-  socket.emit("FromAPI", response);
-  socket.emit("temp", responseTemp);
+
+// listen baby
+app.listen(port, () => console.log(`Listening on port ${port}`));
+
+//FUNCTIONS
+
+// convert data to Fahrenheit
+function HueToFahrenheit(HueTemp){
+  // Hue provides temp values in Celcius x 1000 eg 1942 = 19.4 degree celcius
+  // 🇺🇸 uses F
+  tempF = (HueTemp/100*(9/5))+32;
+  return tempF
 };
 
-const getBatStatus = socket => {
-  console.log("request to get bat status");
-  v3.discovery.nupnpSearch()
-    .then(searchResults => {
-      const host = searchResults[0].ipaddress;
-      return v3.api.createLocal(host).connect(USERNAME);
+// Send Sensor Data to MongoDB
+function updateDB() {
+  // Connect to MongDB - using dotenv - https://medium.com/@pdx.lucasm/dotenv-nodemon-a380629e8bff + https://stackoverflow.com/questions/42335016/dotenv-file-is-not-loading-environment-variables
+  MongoClient.connect("mongodb+srv://"+process.env.MONGOUN+":"+ process.env.MONGOPW + ".HIRT@huecluster0.i6cxh.mongodb.net/myFirstDatabase?retryWrites=true&w=majority", {
+      useUnifiedTopology: true
     })
-    .then(api => {
-      // Get the daylight sensor for the bridge, at id 1
-          console.log("hell0");
-          return api.lights.getLight(COLOR_GLOBE);
-          })
-    .then(result => {
-      console.log(`${result.toStringDetailed()}`);
-      socket.emit("batStatus", `${result}`);
-    })
-};
+    .then(client => {
+      console.log('Connected to Mongo Database')
+      const db = client.db('HueData')
+      const HueDataSensor1 = db.collection('HueDataSensor1')
+      // app.use( /* ... */ )
+      // app.get( /* ... */ )
+      // app.post( /* ... */ )
+      // app.listen( /* ... */ )
 
-
-    const globeON = socket => {
-      console.log("request to turn globe on");
+      //WRITE SENSOR DATA TO THE DATABASE
       v3.discovery.nupnpSearch()
         .then(searchResults => {
           const host = searchResults[0].ipaddress;
           return v3.api.createLocal(host).connect(USERNAME);
         })
         .then(api => {
-          // Using a LightState object to build the desired state
-          const state = new LightState()
-            .on()
-            .ct(200)
-            .brightness(100)
-          ;
-
-          return api.lights.setLightState(COLOR_GLOBE, state);
+          // The Hue Daylight software sensor is identified as id 1
+          return api.sensors.getSensor(SENSOR);
         })
-        .then(result => {
-          console.log(`Light state change was successful? ${result}`);
-        })};
+        .then(sensor => {
+          // Display the details of the sensors we got back
+          console.log(sensor._data.state.temperature);
+          let temp = HueToFahrenheit(sensor._data.state.temperature);
+          console.log(temp);
+          sensor._data.state["TempF"] = temp;
+          console.log(sensor._data.state)
+          HueDataSensor1.insertOne(sensor._data.state)
+        });
 
-
-
-server.listen(port, () => console.log(`Listening on port ${port}`));
+      app.post('/', (req, res) => {
+        HueDataSensor1.insertOne(req.body)
+          .then(result => {
+            console.log("insterted into DB: " + result)
+            res.redirect('/')
+          })
+          .catch(error => console.error(error))
+      })
+    })
+    .catch(error => console.error(error))
+}
