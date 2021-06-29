@@ -16,8 +16,9 @@ const model = require('node-hue-api').v3.model;
 const LightState = v3.lightStates.LightState;
 const USERNAME = process.env.HUEID //env baby
   // The name of the light we wish to retrieve by name
+  , SENSOR_A = 1
   , COLOR_GLOBE = 3
-  , SENSOR = 10;
+  , SENSOR_B = 10;
 
 // future steps
 // const http = require("http");
@@ -58,10 +59,33 @@ function HueToFahrenheit(HueTemp){
   return tempF
 };
 
+function getSensorTemp(device,db) {
+  //WRITE SENSOR DATA TO THE DATABASE
+  v3.discovery.nupnpSearch()
+    .then(searchResults => {
+      const host = searchResults[0].ipaddress;
+      return v3.api.createLocal(host).connect(USERNAME);
+    })
+    .then(api => {
+      // The Hue Daylight software sensor is identified as id 1
+      return api.sensors.getSensor(device);
+
+    })
+    .then(sensor => {
+      // Display the details of the sensors we got back
+      console.log(sensor._data.state.temperature);
+      let temp = HueToFahrenheit(sensor._data.state.temperature);
+      console.log(temp);
+      sensor._data.state["TempF"] = temp;
+      console.log(sensor._data.state)
+      db.insertOne(sensor._data.state)
+    });
+}
+
 // Send Sensor Data to MongoDB
 function updateDB() {
   // Connect to MongDB - using dotenv - https://medium.com/@pdx.lucasm/dotenv-nodemon-a380629e8bff + https://stackoverflow.com/questions/42335016/dotenv-file-is-not-loading-environment-variables
-  MongoClient.connect("mongodb+srv://"+process.env.MONGOUN+":"+ process.env.MONGOPW + ".HIRT@huecluster0.i6cxh.mongodb.net/myFirstDatabase?retryWrites=true&w=majority", {
+  MongoClient.connect("mongodb+srv://"+process.env.MONGOUN+":"+ process.env.MONGOPW + "@huecluster0.i6cxh.mongodb.net/myFirstDatabase?retryWrites=true&w=majority", {
       useUnifiedTopology: true
     })
     .then(client => {
@@ -71,27 +95,8 @@ function updateDB() {
       // app.use( /* ... */ )
       // app.get( /* ... */ )
       // app.post( /* ... */ )
-      // app.listen( /* ... */ )
-
-      //WRITE SENSOR DATA TO THE DATABASE
-      v3.discovery.nupnpSearch()
-        .then(searchResults => {
-          const host = searchResults[0].ipaddress;
-          return v3.api.createLocal(host).connect(USERNAME);
-        })
-        .then(api => {
-          // The Hue Daylight software sensor is identified as id 1
-          return api.sensors.getSensor(SENSOR);
-        })
-        .then(sensor => {
-          // Display the details of the sensors we got back
-          console.log(sensor._data.state.temperature);
-          let temp = HueToFahrenheit(sensor._data.state.temperature);
-          console.log(temp);
-          sensor._data.state["TempF"] = temp;
-          console.log(sensor._data.state)
-          HueDataSensor1.insertOne(sensor._data.state)
-        });
+      // getSensorTemp(SENSOR_A,HueDataSensor1)
+      getSensorTemp(SENSOR_B,HueDataSensor1)
 
       app.post('/', (req, res) => {
         HueDataSensor1.insertOne(req.body)
